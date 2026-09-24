@@ -3,9 +3,12 @@ use std::sync::{
     atomic::{AtomicU64, Ordering},
 };
 
-use crate::domain::{
-    job::{CreateJobRequest, Job},
-    job_repository::JobRepository,
+use crate::{
+    application::error::ApplicationError,
+    domain::{
+        job::{CreateJobRequest, Job},
+        job_repository::JobRepository,
+    },
 };
 
 pub struct CreateJobUseCase {
@@ -21,7 +24,13 @@ impl CreateJobUseCase {
         }
     }
 
-    pub fn execute(&self, request: CreateJobRequest) -> Job {
+    pub fn execute(&self, request: CreateJobRequest) -> Result<Job, ApplicationError> {
+        if request.job_type.trim().is_empty() {
+            return Err(ApplicationError::InvalidRequest(
+                "job_type must not be empty".to_string(),
+            ));
+        }
+
         let id = self.next_job_id.fetch_add(1, Ordering::Relaxed);
 
         let job = Job {
@@ -33,6 +42,53 @@ impl CreateJobUseCase {
 
         self.repository.save(job.clone());
 
-        job
+        Ok(job)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::infrastructure::in_memory_repository::InMemoryJobRepository;
+
+    fn use_case() -> CreateJobUseCase {
+        CreateJobUseCase::new(
+            Arc::new(InMemoryJobRepository::new()),
+            Arc::new(AtomicU64::new(1)),
+        )
+    }
+
+    #[test]
+    fn creates_a_pending_job_with_incrementing_ids() {
+        let use_case = use_case();
+
+        let first = use_case
+            .execute(CreateJobRequest {
+                job_type: "resize".to_string(),
+                payload: 10,
+            })
+            .unwrap();
+        let second = use_case
+            .execute(CreateJobRequest {
+                job_type: "resize".to_string(),
+                payload: 20,
+            })
+            .unwrap();
+
+        assert_eq!(first.id, 1);
+        assert_eq!(second.id, 2);
+        assert_eq!(first.status, "pending");
+    }
+
+    #[test]
+    fn rejects_an_empty_job_type() {
+        let use_case = use_case();
+
+        let result = use_case.execute(CreateJobRequest {
+            job_type: "   ".to_string(),
+            payload: 10,
+        });
+
+        assert!(matches!(result, Err(ApplicationError::InvalidRequest(_))));
     }
 }
