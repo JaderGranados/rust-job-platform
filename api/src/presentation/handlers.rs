@@ -15,3 +15,7 @@ pub async fn get_job_handler(
 
     Ok(Json(job))
 }
+
+pub async fn list_jobs_handler(State(state): State<Arc<AppState>>) -> Json<Vec<Job>> {
+    Json(state.list_jobs.execute())
+}

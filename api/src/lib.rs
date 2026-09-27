@@ -8,20 +8,24 @@ use std::sync::{Arc, atomic::AtomicU64};
 use axum::{
     Router,
     extract::{Json, State},
-    routing::{get, post},
+    routing::get,
 };
 
-use application::{create_job::CreateJobUseCase, get_job::GetJobUseCase};
+use application::{create_job::CreateJobUseCase, get_job::GetJobUseCase, list_jobs::ListJobsUseCase};
 use domain::{
     job::{CreateJobRequest, Job},
     job_repository::JobRepository,
 };
 use infrastructure::in_memory_repository::InMemoryJobRepository;
-use presentation::{error::ApiError, handlers::get_job_handler};
+use presentation::{
+    error::ApiError,
+    handlers::{get_job_handler, list_jobs_handler},
+};
 
 pub struct AppState {
     pub create_job: Arc<CreateJobUseCase>,
     pub get_job: Arc<GetJobUseCase>,
+    pub list_jobs: Arc<ListJobsUseCase>,
 }
 
 pub fn build_app() -> Router {
@@ -30,17 +34,19 @@ pub fn build_app() -> Router {
         repository.clone(),
         Arc::new(AtomicU64::new(1)),
     ));
-    let get_job = Arc::new(GetJobUseCase::new(repository));
+    let get_job = Arc::new(GetJobUseCase::new(repository.clone()));
+    let list_jobs = Arc::new(ListJobsUseCase::new(repository));
 
     let state = Arc::new(AppState {
         get_job,
         create_job,
+        list_jobs,
     });
 
     Router::new()
         .route("/", get(hello))
         .route("/health", get(health))
-        .route("/jobs", post(create_job_handler))
+        .route("/jobs", get(list_jobs_handler).post(create_job_handler))
         .route("/jobs/{id}", get(get_job_handler))
         .with_state(state)
 }

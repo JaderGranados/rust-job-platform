@@ -107,3 +107,79 @@ async fn get_job_returns_not_found_for_unknown_id() {
     let body = json_body(response).await;
     assert_eq!(body["error"], "job_not_found");
 }
+
+#[tokio::test]
+async fn list_jobs_returns_all_created_jobs() {
+    let app = app();
+
+    let first = json_body(
+        app.clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/jobs")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({ "job_type": "resize", "payload": 5 }).to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap(),
+    )
+    .await;
+
+    let second = json_body(
+        app.clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/jobs")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({ "job_type": "compress", "payload": 20 }).to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap(),
+    )
+    .await;
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/jobs")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = json_body(response).await;
+    let ids: Vec<_> = body
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|job| job["id"].clone())
+        .collect();
+    assert!(ids.contains(&first["id"]));
+    assert!(ids.contains(&second["id"]));
+}
+
+#[tokio::test]
+async fn list_jobs_returns_empty_array_when_no_jobs_exist() {
+    let response = app()
+        .oneshot(
+            Request::builder()
+                .uri("/jobs")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(json_body(response).await.as_array().unwrap().len(), 0);
+}
